@@ -1,0 +1,861 @@
+<template>
+  <div>
+    <div class="table-header">
+      <!-- 搜索部分开始 -->
+      <el-form :inline="true" :model="page" class="demo-form-inline" size="mini">
+        <el-form-item label="姓名">
+          <el-input v-model="page.params.teacherName" placeholder="教师名" clearable/>
+        </el-form-item>
+        <el-form-item label="工号">
+          <el-input v-model="page.params.teacherNumber" placeholder="工号" clearable/>
+        </el-form-item>
+        <el-form-item label="性别">
+          <el-select v-model="page.params.teacherSex" clearable filterable placeholder="请选择">
+            <el-option key="1" label="男" value="1"/>
+            <el-option key="2" label="女" value="2"/>
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="职务">
+          <el-select v-model="page.params.jobId" clearable filterable placeholder="请选择">
+            <el-option
+              v-for="job in jobList"
+              :key="job.dictId"
+              :label="job.dictName"
+              :value="job.dictId"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="职称">
+          <el-select v-model="page.params.titleId" clearable filterable placeholder="请选择">
+            <el-option
+              v-for="title in titleList"
+              :key="title.dictId"
+              :label="title.dictName"
+              :value="title.dictId"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="学院">
+          <el-select v-model="page.params.collegeId" clearable filterable placeholder="请选择">
+            <el-option
+              v-for="college in collegeList"
+              :key="college.dictId"
+              :label="college.dictName"
+              :value="college.dictId"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="入职时间区间" prop>
+          <div class="block">
+            <el-date-picker
+              v-model="timeInterval"
+              type="daterange"
+              value-format="yyyy-MM-dd"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+            />
+          </div>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="search">查询</el-button>
+        </el-form-item>
+      </el-form>
+      <!-- 搜索部分结束 -->
+
+      <el-divider/>
+      <el-button
+        v-if="permission.indexOf('user:teacher:add') >= 0"
+        type="primary"
+        size="mini"
+        @click="toAdd"
+      >添加</el-button>
+      <el-button
+        v-if="permission.indexOf('user:teacher:update') >= 0"
+        type="warning"
+        size="mini"
+        @click="resetPwd"
+      >重置密码</el-button>
+      <el-button
+        v-if="permission.indexOf('user:teacher:update') >= 0"
+        type="danger"
+        size="mini"
+        @click="resetAll"
+      >全部密码重置</el-button>
+    </div>
+
+    <!-- 列表开始 -->
+    <el-table
+      v-loading="this.$store.getters.loading"
+      :data="page.list"
+      border
+      stripe
+      style="width: 100%"
+      size="mini"
+      @sort-change="sortHandler"
+      @selection-change="changeSelect"
+    >
+      <el-table-column type="selection" width="55"/>
+      <el-table-column prop="teacherNumber" sortable="custom" label="工号"/>
+      <el-table-column prop="teacherName" sortable="custom" label="姓名"/>
+      <el-table-column sortable="custom" label="性别">
+        <template slot-scope="scope">
+          <span>{{ scope.row.teacherSex==1?'男':'女' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="teacherAge" sortable="custom" label="年龄"/>
+      <el-table-column prop="job.dictName" sortable="custom" label="职务"/>
+      <el-table-column prop="title.dictName" sortable="custom" label="职称"/>
+      <el-table-column prop="teacherEntryTime" sortable="custom" label="入职时间"/>
+      <el-table-column prop="college.dictName" sortable="custom" label="学院"/>
+
+      <el-table-column fixed="right" label="操作">
+        <template slot-scope="scope" class="teacher-do">
+          <el-dropdown>
+            <el-button type="primary" size="mini">
+              操作
+              <i class="el-icon-arrow-down el-icon--right"/>
+            </el-button>
+            <el-dropdown-menu slot="dropdown">
+              <el-dropdown-item>
+                <el-button
+                  v-if="permission.indexOf('user:teacher:update') >= 0"
+                  size="mini"
+                  type="success"
+                  @click="toUpdate(scope.row.teacherId)"
+                >编辑</el-button>
+              </el-dropdown-item>
+              <el-dropdown-item>
+                <el-button size="mini" type="primary" @click="getDetails(scope.row.teacherId)">查看详情</el-button>
+              </el-dropdown-item>
+              <el-dropdown-item>
+                <el-button
+                  v-if="permission.indexOf('user:teacher:role') >= 0"
+                  size="mini"
+                  type="primary"
+                  @click="checkRole(scope.row.teacherId)"
+                >修改角色</el-button>
+              </el-dropdown-item>
+              <el-dropdown-item>
+                <el-button
+                  v-if="permission.indexOf('ar:role:auth') >= 0"
+                  size="mini"
+                  type="primary"
+                  @click="checkDataAuth(scope.row.teacherId)"
+                >数据级权限</el-button>
+              </el-dropdown-item>
+              <el-dropdown-item>
+                <el-button
+                  v-if="permission.indexOf('user:teacher:delete') >= 0"
+                  size="mini"
+                  type="danger"
+                  @click="toDelete(scope.row.teacherId)"
+                >删除</el-button>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </el-dropdown>
+        </template>
+      </el-table-column>
+    </el-table>
+    <!-- 列表结束 -->
+
+    <!-- 分页组件开始 -->
+    <div class="page-div">
+      <el-pagination
+        :current-page="page.currentPage"
+        :page-sizes="[10,15,20,30]"
+        :page-size="page.currentCount"
+        :total="page.totalCount"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="handleSizeChange"
+        @current-change="handleCurrentChange"
+      />
+    </div>
+    <!-- 分页组件结束 -->
+
+    <!-- 新增 编辑弹窗开始 -->
+    <el-dialog
+      v-loading="this.$store.getters.loading"
+      :title="dialogTitle"
+      :visible.sync="dialogFormVisible"
+      width="580px"
+    >
+      <el-form
+        ref="teacher"
+        :rules="rules"
+        :inline="true"
+        :model="teacher"
+        label-width="80px"
+        size="mini"
+      >
+        <el-form-item label="工号" prop="teacherNumber">
+          <el-input :disabled="isdisabledFn" v-model="teacher.teacherNumber" clearable/>
+        </el-form-item>
+        <el-form-item label="密码" prop="teacherPassword">
+          <el-input v-model="teacher.teacherPassword" clearable type="password"/>
+        </el-form-item>
+        <el-form-item label="姓名" prop="teacherName">
+          <el-input v-model="teacher.teacherName" clearable/>
+        </el-form-item>
+        <el-form-item label="身份证号" prop="teacherCard">
+          <el-input v-model="teacher.teacherCard" clearable/>
+        </el-form-item>
+
+        <el-form-item label="年龄" prop="teacherAge">
+          <el-input v-model="teacher.teacherAge" clearable/>
+        </el-form-item>
+
+        <el-form-item label="手机号" prop="teacherMobile">
+          <el-input v-model="teacher.teacherMobile" clearable/>
+        </el-form-item>
+
+        <el-form-item label="邮箱" prop="teacherEmail">
+          <el-input v-model="teacher.teacherEmail" clearable/>
+        </el-form-item>
+
+        <el-form-item label="学院" prop="teacherCollege">
+          <el-select v-model="teacher.teacherCollege" filterable placeholder="请选择" clearable>
+            <el-option
+              v-for="college in collegeList"
+              :key="college.dictId"
+              :label="college.dictName"
+              :value="college.dictId"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="职称" prop="teacherCollege">
+          <el-select v-model="teacher.teacherTitle" filterable placeholder="请选择" clearable>
+            <el-option
+              v-for="title in titleList"
+              :key="title.dictId"
+              :label="title.dictName"
+              :value="title.dictId"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="职务">
+          <el-select v-model="teacher.teacherJob" filterable placeholder="请选择" clearable>
+            <el-option
+              v-for="job in jobList"
+              :key="job.dictId"
+              :label="job.dictName"
+              :value="job.dictId"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="入职时间" prop="teacherName">
+          <el-date-picker
+            v-model="teacher.teacherEntryTime"
+            placeholder="选择时间"
+            value-format="yyyy-MM-dd"
+            style="width: 100%;"
+          />
+        </el-form-item>
+        <el-form-item label="性别" prop="teacherSex">
+          <el-radio-group v-model="teacher.teacherSex">
+            <el-radio :label="1">男</el-radio>
+            <el-radio :label="2">女</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="照片">
+          <el-upload
+            v-loading="imgLoading"
+            :show-file-list="false"
+            :on-success="handleAvatarSuccess"
+            :before-upload="beforeAvatarUpload"
+            class="avatar-uploader"
+            action="http://127.0.0.1:8080/upload"
+            name="file"
+          >
+            <img v-if="imageUrl" :src="imageUrl" class="avatar">
+            <i v-else class="el-icon-plus avatar-uploader-icon"/>
+          </el-upload>
+        </el-form-item>
+
+        <el-form-item class="teacher-submit-part">
+          <el-button type="primary" @click="save">提交</el-button>
+          <el-button @click="dialogFormVisible=false">取消</el-button>
+        </el-form-item>
+      </el-form>
+    </el-dialog>
+    <!-- 新增 编辑弹窗结束 -->
+
+    <!-- 详情弹窗开始 -->
+    <el-dialog
+      v-loading="this.$store.getters.loading"
+      :visible.sync="dialogResumeVisible"
+      title="详细信息"
+      width="580px"
+    >
+      <el-form
+        ref="teacher"
+        :rules="rules"
+        :inline="true"
+        :model="teacher"
+        :disabled="false"
+        label-width="80px"
+        size="mini"
+        label-position="right"
+      >
+        <img :src="teacher.teacherImg" class="avatar" style="margin:-6% 39% 2%;">
+        <el-form-item label="工号" prop="teacherNumber">
+          <el-input :disabled="isdisabledFn" v-model="teacher.teacherNumber"/>
+        </el-form-item>
+        <el-form-item label="密码" prop="teacherPassword">
+          <el-input v-model="teacher.teacherPassword" type="password"/>
+        </el-form-item>
+        <el-form-item label="姓名" prop="teacherName">
+          <el-input :disabled="isdisabledFn" v-model="teacher.teacherName"/>
+        </el-form-item>
+
+        <el-form-item label="性别" prop="teacherSex">
+          <el-radio-group v-model="teacher.teacherSex">
+            <el-radio :label="1">男</el-radio>
+            <el-radio :label="2">女</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="身份证号" prop="teacherCard">
+          <el-input :disabled="isdisabledFn" v-model="teacher.teacherCard"/>
+        </el-form-item>
+
+        <el-form-item label="年龄" prop="teacherAge">
+          <el-input v-model="teacher.teacherAge"/>
+        </el-form-item>
+
+        <el-form-item label="手机号" prop="teacherMobile">
+          <el-input v-model="teacher.teacherMobile"/>
+        </el-form-item>
+
+        <el-form-item label="邮箱" prop="teacherEmail">
+          <el-input v-model="teacher.teacherEmail"/>
+        </el-form-item>
+
+        <el-form-item label="学院" prop="teacherCollege">
+          <el-select v-model="teacher.teacherCollege" filterable placeholder="请选择">
+            <el-option
+              v-for="college in collegeList"
+              :key="college.dictId"
+              :label="college.dictName"
+              :value="college.dictId"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="职称" prop="teacherCollege">
+          <el-select v-model="teacher.teacherTitle" filterable placeholder="请选择">
+            <el-option
+              v-for="title in titleList"
+              :key="title.dictId"
+              :label="title.dictName"
+              :value="title.dictId"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="职务">
+          <el-select v-model="teacher.teacherJob" filterable placeholder="请选择">
+            <el-option
+              v-for="job in jobList"
+              :key="job.dictId"
+              :label="job.dictName"
+              :value="job.dictId"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="入职时间" prop="teacherName">
+          <el-date-picker
+            v-model="teacher.teacherEntryTime"
+            placeholder="选择时间"
+            value-format="yyyy-MM-dd"
+            style="width: 100%;"
+          />
+        </el-form-item>
+      </el-form>
+    </el-dialog>
+    <!-- 详情弹窗结束 -->
+
+    <!-- 下面是角色操作组件 -->
+    <el-dialog :visible.sync="dialogRoleTree" title="修改角色">
+      <el-tree
+        ref="tree"
+        :data="roleTree"
+        :props="defaultProps"
+        :default-checked-keys="checkIds"
+        show-checkbox
+        node-key="roleId"
+        default-expand-all
+        @check-change="handleCheckChange"
+      />
+      <el-button size="mini" type="primary" @click="updateRole">提交</el-button>
+      <el-button size="mini" @click="dialogRoleTree=false">取消</el-button>
+      <el-button @click="checkIds=[]">火狐</el-button>
+    </el-dialog>
+    <!-- 权限操作组件结束 -->
+
+    <!-- 数据级权限操作 -->
+    <el-dialog
+      v-loading="this.$store.getters.loading"
+      :visible.sync="dialogData"
+      title="数据权限操作"
+      width="580px"
+    >
+      <el-form :model="teacher" label-width="80px" size="mini">
+        <el-form-item label="查询权限级别">
+          <el-select v-model="teacher.teacherOrg" filterable placeholder="请选择" clearable>
+            <el-option :key="1" :value="1" label="查看自己创建的"/>
+            <el-option :key="2" :value="2" label="查看学院的"/>
+            <el-option :key="3" :value="3" label="查看全部"/>
+          </el-select>
+        </el-form-item>
+
+        <el-form-item class="teacher-submit-part">
+          <el-button type="primary" @click="updateDataAuth">提交</el-button>
+          <el-button @click="dialogFormVisible=false">取消</el-button>
+        </el-form-item>
+      </el-form>
+    </el-dialog>
+    <!-- 数据级权限操作结束 -->
+  </div>
+</template>
+<script>
+import teacherApi from '@/api/teacher'
+import dictApi from '@/api/dict'
+import { Loading } from 'element-ui'
+import RoleApi from '@/api/role'
+import TeacherRoleApi from '@/api/teacherRole'
+
+export default {
+  data() {
+    return {
+      permission: this.$store.getters.auths,
+      timeInterval: null, // 入职时间区间(数组)
+      dialogFormVisible: false, // 弹出层表单隐藏
+      dialogData: false, // 数据级权限修改弹窗
+      dialogRoleTree: false, // 弹出层树形隐藏
+      dialogResumeVisible: false, // 弹出简历页隐藏
+      page: {
+        currentPage: 1,
+        currentCount: 10,
+        totalCount: null,
+        totalPage: null,
+        sortName: '',
+        sortOrder: 'asc',
+        params: {
+          teacherNumber: '',
+          teacherCard: '',
+          teacherName: '',
+          teacherMobile: '',
+          teacherEmail: '',
+          teacherSex: '',
+          jobId: '',
+          titleId: '',
+          collegeId: '',
+          startTime: '',
+          endTime: ''
+        },
+        list: []
+      },
+      teacher: {
+        teacherId: '',
+        teacherNumber: '',
+        teacherPassword: '',
+        teacherCard: '',
+        teacherName: '',
+        teacherSex: '',
+        teacherAge: '',
+        teacherJob: '',
+        teacherTitle: '',
+        teacherMobile: '',
+        teacherEmail: '',
+        teacherImg: '',
+        teacherEntryTime: '',
+        teacherCollege: ''
+      },
+      rules: {
+        teacherNumber: [
+          { required: true, message: '请输入工号', trigger: 'blur' }
+        ],
+        teacherPassword: [
+          { required: true, message: '请输入密码', trigger: 'blur' }
+        ],
+        teacherName: [
+          { required: true, message: '请输入姓名', trigger: 'blur' }
+        ],
+        teacherSex: [
+          { required: true, message: '请选择性别', trigger: 'blur' }
+        ],
+        teacherAge: [
+          { required: true, message: '年龄不能为空', trigger: 'blur' }
+        ],
+        teacherImg: [
+          { required: true, message: '请输入题库名', trigger: 'blur' }
+        ]
+      },
+      collegeList: [],
+      jobList: [],
+      titleList: [],
+      college: '',
+      title: '',
+      job: '',
+      imageUrl: '',
+      imgLoading: false,
+      isdisabledFn: false,
+      dialogTitle: '新增教师',
+      currentPage4: 4,
+      roleTree: [
+        { roleId: '' }
+      ], // 角色树形列表
+      defaultProps: {
+        children: 'list',
+        label: 'roleName'
+      },
+      checkIds: [], // 角色树默认选中
+      checkTeacher: '', // 当前点击的教师id
+      teacherRoles: [], // 教师-角色数组，用于添加
+      selectIds: [] // 被选中的教师id
+    }
+  },
+  created() {
+    this.list()
+    this.getCollege()
+    this.getTitle()
+    this.getJob()
+    this.treeList()
+  },
+  methods: {
+    handleSizeChange(val) {
+      this.page.currentCount = val
+      this.list()
+    },
+    handleCurrentChange(val) {
+      this.page.currentPage = val
+      this.list()
+    },
+    sortHandler(column) {
+      // 排序查询
+      this.page.sortName = column.prop
+      this.page.sortOrder = column.order
+      this.list()
+    },
+
+    save() {
+      // 保存或修改;
+
+      if (this.teacher.teacherId != '') {
+        this.$refs.teacher.validate(valid => {
+          if (valid) {
+            this.$store.commit('SET_LOADING', true)
+            teacherApi.update(this.teacher).then(res => {
+              if (res.code == 200) {
+                this.dialogFormVisible = false
+                this.$message.success(res.msg)
+                this.list()
+              }
+            })
+          } else {
+            console.log('error submit!!')
+            return false
+          }
+        })
+      } else {
+        this.$refs.teacher.validate(valid => {
+          if (valid) {
+            this.$store.commit('SET_LOADING', true)
+            teacherApi.save(this.teacher).then(res => {
+              if (res.code == 200) {
+                this.dialogFormVisible = false
+                this.$message.success(res.msg)
+                this.list()
+              } else {
+                this.dialogFormVisible = false
+                this.$message.error('保存失败!')
+              }
+            })
+          } else {
+            console.log('error submit!!')
+            return false
+          }
+        })
+      }
+    },
+    updateDataAuth() {
+      // 更新数据级权限
+      this.$store.commit('SET_LOADING', true)
+      teacherApi.update(this.teacher).then(res => {
+        if (res.code == 200) {
+          this.dialogData = false
+          this.$message.success(res.msg)
+          this.list()
+        }
+      })
+    },
+    list() {
+      // 分页查询
+      this.$store.commit('SET_LOADING', true)
+      if (this.timeInterval != null) {
+        this.page.params.startTime = this.timeInterval[0]
+        this.page.params.endTime = this.timeInterval[1]
+      } else {
+        this.page.params.startTime = ''
+        this.page.params.endTime = ''
+      }
+      teacherApi.list(this.page).then(res => {
+        if (res.code == 200) {
+          this.page = res.data
+        }
+      })
+    },
+    toUpdate(id) {
+      // 打开弹窗，进行修改
+      // 根据id查询
+      teacherApi.get(id).then(res => {
+        if (res.code == 200) {
+          this.teacher = res.data
+          this.imageUrl = this.teacher.teacherImg
+          this.dialogTitle = '修改教师'
+          this.dialogFormVisible = true
+          this.isdisabledFn = true
+        }
+      })
+    },
+    checkDataAuth(id) {
+      // 打开弹窗，进行修改
+      // 根据id查询
+      teacherApi.get(id).then(res => {
+        if (res.code == 200) {
+          this.teacher = res.data
+          this.dialogData = true
+        }
+      })
+    },
+    getDetails(id) {
+      // 加载查看详情表单
+      teacherApi.get(id).then(res => {
+        if (res.code == 200) {
+          this.teacher = res.data
+          this.dialogResumeVisible = true
+        }
+      })
+    },
+    toAdd() {
+      this.college = {
+        collegeId: '',
+        collegeName: ''
+      }
+      this.title = {
+        titleId: '',
+        titleName: ''
+      }
+      this.job = {
+        jobId: '',
+        jobName: ''
+      }
+      this.teacher = {
+        teacherId: '',
+        teacherName: ''
+      }
+      this.dialogTitle = '新增教师'
+      this.dialogFormVisible = true
+      this.isdisabledFn = false
+      // this.imageUrl = "";
+    },
+    toDelete(id) {
+      this.$confirm('确定删除这条记录?', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'error'
+      }).then(() => {
+        teacherApi.delete(id).then(res => {
+          if (res.code == 200) {
+            this.$message({
+              message: res.msg,
+              teacher: 'success'
+            })
+          } else {
+            this.$message({
+              message: res.msg,
+              teacher: 'error'
+            })
+          }
+          this.list()
+        })
+      })
+    },
+    getCollege() {
+      // 查询学院
+      dictApi.all({ dictType: 'college' }).then(res => {
+        this.collegeList = res.data
+      })
+    },
+    getJob() {
+      // 查询职务
+      dictApi.all({ dictType: 'job' }).then(res => {
+        this.jobList = res.data
+      })
+    },
+    getTitle() {
+      // 查询职称
+      dictApi.all({ dictType: 'title' }).then(res => {
+        this.titleList = res.data
+      })
+    },
+    handleAvatarSuccess(res, file) {
+      // this.teacher.teacherImg = URL.createObjectURL(file.raw);
+      this.imageUrl = res.data.fileUrl
+      this.teacher.teacherImg = this.imageUrl
+      this.$message.success(res.msg)
+      this.imgLoading = false
+    },
+    beforeAvatarUpload(file) {
+      const isJPG = file.type === 'image/jpeg' || file.type === 'image/png'
+      const isLt2M = file.size / 1024 / 1024 < 5
+      if (!isJPG) {
+        this.$message.error('上传图片只支持 JPG、JPEG、PNG 格式!')
+        return
+      }
+      if (!isLt2M) {
+        this.$message.error('上传图片大小不能超过 5MB!')
+        return
+      }
+      this.imgLoading = true
+      return isJPG && isLt2M
+    },
+    search() {
+      this.list()
+    },
+    treeList() {
+      // 树形加载
+      RoleApi.treeList().then(res => {
+        if (res.code == 200) {
+          this.roleTree = res.data
+        }
+      })
+    },
+    checkRole(id) {
+      this.checkTeacher = id
+      this.teacherRoles = []
+      this.dialogRoleTree = true
+      this.$nextTick(() => {
+        this.$refs.tree.setCheckedKeys([])
+      })
+      TeacherRoleApi.roleList(id).then(res => {
+        if (res.code == 200) {
+          this.checkIds = res.data
+          // 遍历数组进行拷贝
+          this.checkIds.forEach((value, key) => {
+            this.teacherRoles.push({
+              trTeacher: this.checkTeacher,
+              trRole: value
+            })
+          })
+        }
+      })
+    },
+    updateRole() {
+      TeacherRoleApi.update(this.teacherRoles).then(res => {
+        if (res.code == 200) {
+          this.dialogRoleTree = false
+          this.$message.success(res.msg)
+        }
+      })
+    },
+    handleCheckChange(data, checked, indeterminate) {
+      // 先找数组中是否已经有了被勾选的元素
+      const index = this.teacherRoles.findIndex(e => e.trRole == data.roleId)
+      // 如果这个元素被勾选了，数组中也没有，那就添加
+      if (checked && index === -1) {
+        this.teacherRoles.push({
+          trTeacher: this.checkTeacher,
+          trRole: data.roleId
+        })
+      }
+      // 如果这个元素没被勾选，但是数组中有，就删除
+      if (!checked && index !== -1) {
+        this.teacherRoles.splice(index, 1)
+      }
+    },
+    changeSelect(teacherList) {
+      // 多选框选择状态改变
+      const ids = teacherList.map(x => { return x.teacherId })
+      this.selectIds = ids
+    },
+    resetPwd() {
+      this.$confirm('密码将会重置为身份证后6位，是否继续?', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        teacherApi.resetPwd(this.selectIds).then(res => {
+          if (res.code == 200) {
+            this.$message.success(res.msg)
+          }
+          this.list()
+        })
+      })
+    },
+    resetAll() {
+      this.$confirm('密码将会重置为身份证后6位，是否继续?', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'danger'
+      }).then(() => {
+        teacherApi.resetAll().then(res => {
+          if (res.code == 200) {
+            this.$message.success(res.msg)
+          }
+          this.list()
+        })
+      })
+    }
+  }
+}
+</script>
+
+<style scoped>
+.table-header {
+  margin-bottom: 10px;
+}
+
+.page-div {
+  margin-top: 10px;
+}
+
+.avatar-uploader .el-upload:hover {
+  border-color: #409eff;
+}
+
+.avatar-uploader-icon {
+  border: 1px dashed #dcdfe6;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  font-size: 28px;
+  color: #8c939d;
+  width: 100px;
+  height: 100px;
+  line-height: 100px;
+  text-align: center;
+}
+
+.avatar {
+  width: 100px;
+  height: 100px;
+  display: block;
+}
+
+.teacher-submit-part {
+  padding: 13% 0 0 10%;
+}
+
+.img {
+  width: 150px;
+  height: 150px;
+  background-color: aquamarine;
+  margin: 15px;
+}
+</style>
